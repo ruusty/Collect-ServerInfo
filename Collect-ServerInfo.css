@@ -268,8 +268,6 @@ img {
 /* h2 {page-break-before:always;}*/
 
 body {
-  /*font-size:26px;*/
-  font-size:125%;
 }
 
 code {
@@ -282,5 +280,5 @@ word-break: break-all;
 white-space: normal;
 word-wrap:break-word;
 }
-
+}
 				    </style>
