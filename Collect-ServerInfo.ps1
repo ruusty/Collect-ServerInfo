@@ -553,6 +553,52 @@ Process
       $htmlbody += "<p>Skipped</p>"
     }
     #endregion ChocoInfo
+    
+    #region ChocoOutdated
+    #---------------------------------------------------------------------
+    # Collect Chocolatey software information and convert to HTML fragment
+    #---------------------------------------------------------------------
+    $subhead = "<h3>Chocolatey Outdated Packages</h3>"
+    $subhead = @"
+    <p><a name="Chocolatey-Outdated-Packages"></a></p><h3 id="Chocolatey-Outdated-Packages">Chocolatey Outdated Packages<a href="#TOC">^</a></h3>
+"@
+    $htmlbody += $subhead
+    if (!$skipChocolatey)
+    {
+      
+      Write-Verbose "Collecting Chocolatey Outdated Packages"
+      
+      try
+      {
+        $software = Invoke-Command -ScriptBlock { choco.exe outdated --limitoutput } -ComputerName $ComputerName
+        $rv = @()
+        $software | %{
+          $row = New-Object PSObject
+          if ($_ -notlike "OutDated*" -and $_ -notlike " Output is*" -and $_ -notlike "")
+          {
+            $tmp = $_ -split ("\|")
+            $row | Add-Member NoteProperty -Name "Name" -value $tmp[0]
+            $row | Add-Member NoteProperty -Name "Version" -value $tmp[1]
+            $row | Add-Member NoteProperty -Name "VersionAvailable" -value $tmp[2]
+            $row | Add-Member NoteProperty -Name "pinned" -value $tmp[3]
+          }
+          $rv += $row
+        }
+        $htmlbody += $rv | ConvertTo-Html -Fragment
+        $htmlbody += $spacer
+      }
+      catch
+      {
+        Write-Warning $_.Exception.Message
+        $htmlbody += "<p>An error was encountered. $($_.Exception.Message)</p>"
+        $htmlbody += $spacer
+      }
+    }
+    else
+    {
+      $htmlbody += "<p>Skipped</p>"
+    }
+    #endregion ChocoOutdated    
     #region OracleInfo
     #---------------------------------------------------------------------
     # Collect Oracle software information and convert to HTML fragment
@@ -653,10 +699,10 @@ Process
   <li><a href="#Network-Interface-Information">Network Interface Information</a></li>
   <li><a href="#Software-Information">Software Information</a></li>
   <li><a href="#Chocolatey-Software-Information">Chocolatey Software Information</a></li>
+  <li><a href="#Chocolatey-Outdated-Packages">Chocolatey Outdated Packages</a></li>
   <li><a href="#Oracle-Software-Information">Oracle Software Information</a></li>
   <li><a href="#Share-Information">Share Information</a></li>
 </ul>
-
 <p></p>
 
 "@
