@@ -72,13 +72,14 @@
                       - Added Powershell section
                       - Added Oracle Software Section
                       - Added regions
+    2016-07-21        - Wrapped WMI calls in Invoke-Command. These failed because of Server hardening
 #>
 [CmdletBinding()]
 param
 (
   [Parameter(ValueFromPipeline = $true,
              Position = 1)]
-  [string[]]
+  [string]
   $ComputerName = $env:COMPUTERNAME,
   [string]$CssPath = $(Join-Path $PSScriptRoot "Collect-ServerInfo.css"),
   [switch]$skipSoftware,
@@ -111,37 +112,63 @@ Process
     $htmlbody = @()
     $htmlfile = "$($ComputerName).html"
     $spacer = "<br />"
-    #region PingTest
-    #---------------------------------------------------------------------
-    # Do 10 pings and calculate the fastest response time
-    # Not using the response time in the report yet so it might be
-    # removed later.
-    #---------------------------------------------------------------------
-    Write-Verbose "Pinging $ComputerName"
-    try
-    {
-        $bestping = (Test-Connection -ComputerName $ComputerName -Count 4 -ErrorAction STOP | Sort ResponseTime)[0].ResponseTime
-    }
-    catch
-    {
-        Write-Warning $_.Exception.Message
-        $bestping = "Unable to connect"
-    }
 
-    if ($bestping -eq "Unable to connect")
-    {
-        if (!($PSCmdlet.MyInvocation.BoundParameters[“Verbose”].IsPresent))
-        {
-            Write-Host "Unable to connect to $ComputerName"
-        }
-
-        "Unable to connect to $ComputerName"
-  }
-  #endregion PingTest
-  else
+  #region nslookupTest
+  #---------------------------------------------------------------------
+  # Collect DNS details to HTML fragment
+  # As on Windows 7 can't use Get-NetTCPConnection,Get-NetIPConfiguration
+  #---------------------------------------------------------------------
+  Write-Verbose "Collecting DNS Details"
+  
+  $subhead = @"
+  <p><a name="computer-dns-details"></a></p><h3 id="computer-dns-details">DNS Details<a href="#TOC">^</a></h3>
+"@
+  $htmlbody += $subhead
+  
+  try
   {
-    Write-Verbose "Pinging $ComputerName bestping:$bestping"
-    #region CompSystem
+    $dnsInfo= nslookup.exe $ComputerName | out-string
+    $htmlbody += "<pre>" +$dnsInfo +"</pre>"
+    $htmlbody += $spacer
+  }
+  catch
+  {
+    Write-Warning $_.Exception.Message
+    $htmlbody += "<p>An error was encountered. $($_.Exception.Message)</p>"
+    $htmlbody += $spacer
+  }
+  
+  #endregion nslookupTest
+  
+  #region IpConfig
+  #---------------------------------------------------------------------
+  # Collect computer IP config  
+  # As on Windows 7 can't use Get-NetTCPConnection,Get-NetIPConfiguration
+  #---------------------------------------------------------------------
+  Write-Verbose "Collecting Windows IP Configuration"
+  
+  $subhead = @"
+  <p><a name="computer-windows-ip-configuration"></a></p><h3 id="computer-windows-ip-configuration">Windows IP Configuration<a href="#TOC">^</a></h3>
+"@
+  
+  $htmlbody += $subhead
+  
+  try
+  {
+    $ipConfigInfo = Invoke-Command -Computer $ComputerName  -ScriptBlock { & ipconfig.exe /all | out-string}
+    
+    $htmlbody += "<pre>" + $ipConfigInfo + "</pre>"
+    $htmlbody += $spacer
+    
+  }
+  catch
+  {
+    Write-Warning $_.Exception.Message
+    $htmlbody += "<p>An error was encountered. $($_.Exception.Message)</p>"
+    $htmlbody += $spacer
+  }
+  #endregion IpConfig
+  #region CompSystem
     #---------------------------------------------------------------------
     # Collect computer system information and convert to HTML fragment
     #---------------------------------------------------------------------
@@ -155,7 +182,7 @@ Process
 
     try
     {
-      $csinfo = Get-WmiObject Win32_ComputerSystem -ComputerName $ComputerName -ErrorAction STOP |
+    $csinfo = Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_ComputerSystem -ErrorAction STOP } |
       Select-Object Name, Manufacturer, Model,
                     @{ Name = 'Physical Processors'; Expression = { $_.NumberOfProcessors } },
                     @{ Name = 'Logical Processors'; Expression = { $_.NumberOfLogicalProcessors } },
@@ -195,8 +222,8 @@ Process
 
     try
     {
-      $osinfo = Get-WmiObject Win32_OperatingSystem -ComputerName $ComputerName -ErrorAction STOP |
-      Select-Object @{ Name = 'Operating System'; Expression = { $_.Caption } },
+    $osinfo = Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_OperatingSystem -ErrorAction STOP} |
+    Select-Object @{ Name = 'Operating System'; Expression = { $_.Caption } },
                     @{ Name = 'Architecture'; Expression = { $_.OSArchitecture } },
                     Version, Organization,
                     @{
@@ -268,7 +295,7 @@ Process
     try
     {
       $memorybanks = @()
-      $physicalmemoryinfo = @(Get-WmiObject Win32_PhysicalMemory -ComputerName $ComputerName -ErrorAction STOP |
+      $physicalmemoryinfo = @(Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_PhysicalMemory -ErrorAction STOP } |
       Select-Object DeviceLocator, Manufacturer, Speed, Capacity)
 
       foreach ($bank in $physicalmemoryinfo)
@@ -309,7 +336,7 @@ Process
 
     try
     {
-      $pagefileinfo = Get-WmiObject Win32_PageFileUsage -ComputerName $ComputerName -ErrorAction STOP |
+      $pagefileinfo = Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_PageFileUsage -ErrorAction STOP } |
       Select-Object @{ Name = 'Pagefile Name'; Expression = { $_.Name } },
                     @{ Name = 'Allocated Size (Mb)'; Expression = { $_.AllocatedBaseSize } }
 
@@ -340,7 +367,7 @@ Process
 
     try
     {
-      $biosinfo = Get-WmiObject Win32_Bios -ComputerName $ComputerName -ErrorAction STOP |
+      $biosinfo = Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_Bios -ErrorAction STOP } |
       Select-Object Status, Version, Manufacturer,
                     @{
         Name = 'Release Date'; Expression = {
@@ -377,7 +404,7 @@ Process
 
     try
     {
-      $diskinfo = Get-WmiObject Win32_LogicalDisk -ComputerName $ComputerName -ErrorAction STOP |
+      $diskinfo = Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_LogicalDisk -ErrorAction STOP } |
       Select-Object DeviceID, FileSystem, VolumeName,
                     @{ Expression = { $_.Size /1Gb -as [int] }; Label = "Total Size (GB)" },
                     @{ Expression = { $_.Freespace / 1Gb -as [int] }; Label = "Free Space (GB)" }
@@ -409,7 +436,7 @@ Process
 
     try
     {
-      $volinfo = Get-WmiObject Win32_Volume -ComputerName $ComputerName -ErrorAction STOP |
+      $volinfo = Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_Volume -ErrorAction STOP } |
       Select-Object Label, Name, DeviceID, SystemVolume,
                     @{ Expression = { $_.Capacity /1Gb -as [int] }; Label = "Total Size (GB)" },
                     @{ Expression = { $_.Freespace / 1Gb -as [int] }; Label = "Free Space (GB)" }
@@ -442,13 +469,13 @@ Process
     try
     {
       $nics = @()
-      $nicinfo = @(Get-WmiObject Win32_NetworkAdapter -ComputerName $ComputerName -ErrorAction STOP | Where { $_.PhysicalAdapter } |
+      $nicinfo = @(Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_NetworkAdapter -ErrorAction STOP } | Where { $_.PhysicalAdapter } |
       Select-Object Name, AdapterType, MACAddress,
                     @{ Name = 'ConnectionName'; Expression = { $_.NetConnectionID } },
                     @{ Name = 'Enabled'; Expression = { $_.NetEnabled } },
                     @{ Name = 'Speed'; Expression = { $_.Speed/1000000 } })
-
-      $nwinfo = Get-WmiObject Win32_NetworkAdapterConfiguration -ComputerName $ComputerName -ErrorAction STOP |
+    
+      $nwinfo = Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_NetworkAdapterConfiguration -ErrorAction STOP } |
       Select-Object Description, DHCPServer,
                     @{ Name = 'IpAddress'; Expression = { $_.IpAddress -join '; ' } },
                     @{ Name = 'IpSubnet'; Expression = { $_.IpSubnet -join '; ' } },
@@ -496,9 +523,8 @@ Process
       Write-Verbose "Collecting software information"
       try
       {
-        $software = Get-WmiObject Win32_Product -ComputerName $ComputerName -ErrorAction STOP | Select-Object Vendor, Name, Version | Sort-Object Vendor, Name
-
-        $htmlbody += $software | ConvertTo-Html -Fragment
+      $software = Invoke-Command -computer $ComputerName -ScriptBlock { Get-ItemProperty @("HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*") | Sort-Object -Property "DisplayName" } | Select-Object DisplayName, Publisher, DisplayVersion, InstallDate
+      $htmlbody += $software | ConvertTo-Html -Fragment
         $htmlbody += $spacer
       }
       catch
@@ -552,8 +578,7 @@ Process
     {
       $htmlbody += "<p>Skipped</p>"
     }
-    #endregion ChocoInfo
-    
+    #endregion ChocoInfo   
     #region ChocoOutdated
     #---------------------------------------------------------------------
     # Collect Chocolatey software information and convert to HTML fragment
@@ -652,8 +677,8 @@ Process
     Write-Verbose "Collecting share information"
 
     try
-    {
-      $shareinfo = Get-WmiObject Win32_Share -ComputerName $ComputerName -ErrorAction STOP |
+  {
+      $shareinfo = Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_Share -ErrorAction STOP } |
       Select-Object Name, Path, Description
       $htmlbody += $shareinfo | ConvertTo-Html -Fragment
       $htmlbody += $spacer
@@ -687,6 +712,8 @@ Process
 <p><a name="TOC"></a></p>
 <h2 id="table-of-contents">Table of Contents</h2>
 <ul>
+  <li><a href="#computer-dns-details">DNS Details</a></li>
+  <li><a href="#computer-windows-ip-configuration">Windows IP Configuration</a></li>
   <li><a href="#computer-system-information">Computer System Information</a></li>
   <li><a href="#Operating-System-Information">Operating System Information</a></li>
   <li><a href="#Powershell-Information">Powershell Information</a></li>
@@ -711,7 +738,7 @@ Process
     $htmlreport = $htmlhead + $htmlbody + $htmltail
     $htmlreport | Out-File $htmlfile -Encoding Utf8
     #endregion Collate
-  }
+
 }
 
 End
