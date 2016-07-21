@@ -524,7 +524,7 @@ Process
       try
       {
       $software = Invoke-Command -computer $ComputerName -ScriptBlock { Get-ItemProperty @("HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*") | Sort-Object -Property "DisplayName" } | Select-Object DisplayName, Publisher, DisplayVersion, InstallDate
-      $htmlbody += $software | ConvertTo-Html -Fragment
+      $htmlbody += $software | select * -ExcludeProperty RunspaceId, PSComputerName, PSShowComputerName | ConvertTo-Html -Fragment
         $htmlbody += $spacer
       }
       catch
@@ -538,47 +538,163 @@ Process
     {
       $htmlbody += "<p>Skipped</p>"
     }
-    #endregion SoftwareInfo
-    #region ChocoInfo
-    #---------------------------------------------------------------------
-    # Collect Chocolatey software information and convert to HTML fragment
-    #---------------------------------------------------------------------
-      $subhead = "<h3>Chocolatey Software Information</h3>"
-      $subhead = @"
+  #endregion SoftwareInfo
+  #region doNetFramework
+  #---------------------------------------------------------------------
+  # Collect information and convert to HTML fragment
+  #---------------------------------------------------------------------
+  $Title = ".NET Framework versions"
+  $subhead = @"
+    <p><a name="#NET-Framework-versions"></a></p><h3 id="#NET-Framework-versions">$Title<a href="#TOC">^</a></h3>
+"@
+  $htmlbody += $subhead
+  
+  try
+  {
+    if (!$skipSoftware)
+    {
+      Write-Verbose "Collecting $Title"
+      $software = Invoke-Command -computer $ComputerName -ScriptBlock {
+        Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP' -recurse |
+        Get-ItemProperty -name Version, Release -EA 0 |
+        Where { $_.PSChildName -match '^(?!S)\p{L}' } |
+        Select PSChildName, Version, Release, @{
+          name = "Product"
+          expression = {
+            switch ($_.Release)
+            {
+              378389 { [Version]"4.5" }
+              378675 { [Version]"4.5.1" }
+              378758 { [Version]"4.5.1" }
+              379893 { [Version]"4.5.2" }
+              393295 { [Version]"4.6" }
+              393297 { [Version]"4.6" }
+              394254 { [Version]"4.6.1" }
+              394271 { [Version]"4.6.1" }
+              394747 { [Version]"4.6.2" }
+              394748 { [Version]"4.6.2" }
+            }
+          }
+        }
+      }
+      $htmlbody += $software | select * -ExcludeProperty PSComputerName, RunspaceId, PSShowComputerName | ConvertTo-Html -Fragment
+      $htmlbody += $spacer
+    }
+    else
+    {
+      $htmlbody += "<p>Skipped</p>"
+    }
+  }
+  catch
+  {
+    Write-Warning $_.Exception.Message
+    $htmlbody += "<p>An error was encountered. $($_.Exception.Message)</p>"
+    $htmlbody += $spacer
+  }
+  
+  #endregion doNetFramework
+  
+  #region ChocoConfig
+  #---------------------------------------------------------------------
+  # Collect Chocolatey software config and convert to HTML fragment
+  #---------------------------------------------------------------------
+  $Title = "Chocolatey Configuration"
+  $subhead = "<h3>$Title</h3>"
+  $subhead = @"
+    <p><a name="Chocolatey-Configuration"></a></p><h3 id="Chocolatey-Configuration">$Title<a href="#TOC">^</a></h3>
+"@
+  $htmlbody += $subhead
+  
+  if (!$skipChocolatey)
+  {
+    Write-Verbose "Collecting $Title"
+    
+    try
+    {
+      
+      $htmlbody += "<h4>Chocolatey Source</h4>"
+      $software = Invoke-Command -ScriptBlock { choco.exe source --limitoutput } -ComputerName $ComputerName
+      
+      $rv = @()
+      $software | %{
+        $row = New-Object PSObject
+        $tmp = $_ -split ("\|")
+        $row | Add-Member NoteProperty -Name "Name" -value $tmp[0]
+        $row | Add-Member NoteProperty -Name "Priority" -value $tmp[1]
+        $rv += $row
+      }
+      $htmlbody += $rv | ConvertTo-Html -Fragment
+      $htmlbody += $spacer
+      
+      # Get Source
+      $htmlbody += "<h4>Chocolatey Features</h4>"
+      $software = Invoke-Command -ScriptBlock { choco.exe features --limitoutput } -ComputerName $ComputerName
+      
+      $rv = @()
+      $software | %{
+        $row = New-Object PSObject
+        $tmp = $_ -split ("\|")
+        $row | Add-Member NoteProperty -Name "Name [status]" -value $tmp[0]
+        $row | Add-Member NoteProperty -Name "Description" -value $tmp[1]
+        $rv += $row
+      }
+      $htmlbody += $rv | ConvertTo-Html -Fragment
+      $htmlbody += $spacer
+    }
+    catch
+    {
+      Write-Warning $_.Exception.Message
+      $htmlbody += "<p>An error was encountered. $($_.Exception.Message)</p>"
+      $htmlbody += $spacer
+    }
+  }
+  else
+  {
+    $htmlbody += "<p>Skipped</p>"
+  }
+  
+  #endregion ChocoConfig
+  
+  #region ChocoInfo
+  #---------------------------------------------------------------------
+  # Collect Chocolatey software information and convert to HTML fragment
+  #---------------------------------------------------------------------
+  $subhead = "<h3>Chocolatey Software Information</h3>"
+  $subhead = @"
     <p><a name="Chocolatey-Software-Information"></a></p><h3 id="Chocolatey-Software-Information">Chocolatey Software Information<a href="#TOC">^</a></h3>
 "@
-    $htmlbody += $subhead
-    if (!$skipChocolatey)
+  $htmlbody += $subhead
+  if (!$skipChocolatey)
+  {
+    
+    Write-Verbose "Collecting Chocolatey software information"
+    
+    try
     {
-
-      Write-Verbose "Collecting Chocolatey software information"
-
-      try
-      {
-        $software = Invoke-Command -ScriptBlock { clist.exe --localonly --limitoutput } -ComputerName $ComputerName
-        $rv = @()
-        $software | %{
-          $row = New-Object PSObject
-          $tmp = $_ -split ("\|")
-          $row | Add-Member NoteProperty -Name "Name" -value $tmp[0]
-          $row | Add-Member NoteProperty -Name "Version" -value $tmp[1]
-          $rv += $row
-        }
-        $htmlbody += $rv | ConvertTo-Html -Fragment
-        $htmlbody += $spacer
+      $software = Invoke-Command -ScriptBlock { clist.exe --localonly --limitoutput } -ComputerName $ComputerName
+      $rv = @()
+      $software | %{
+        $row = New-Object PSObject
+        $tmp = $_ -split ("\|")
+        $row | Add-Member NoteProperty -Name "Name" -value $tmp[0]
+        $row | Add-Member NoteProperty -Name "Version" -value $tmp[1]
+        $rv += $row
       }
-      catch
-      {
-        Write-Warning $_.Exception.Message
-        $htmlbody += "<p>An error was encountered. $($_.Exception.Message)</p>"
-        $htmlbody += $spacer
-      }
+      $htmlbody += $rv | ConvertTo-Html -Fragment
+      $htmlbody += $spacer
     }
-    else
+    catch
     {
-      $htmlbody += "<p>Skipped</p>"
+      Write-Warning $_.Exception.Message
+      $htmlbody += "<p>An error was encountered. $($_.Exception.Message)</p>"
+      $htmlbody += $spacer
     }
-    #endregion ChocoInfo   
+  }
+  else
+  {
+    $htmlbody += "<p>Skipped</p>"
+  }
+  #endregion ChocoInfo   
     #region ChocoOutdated
     #---------------------------------------------------------------------
     # Collect Chocolatey software information and convert to HTML fragment
@@ -590,24 +706,27 @@ Process
     $htmlbody += $subhead
     if (!$skipChocolatey)
     {
-      
-      Write-Verbose "Collecting Chocolatey Outdated Packages"
-      
-      try
-      {
+    
+    Write-Verbose "Collecting Chocolatey Outdated Packages"
+    
+    try
+    {
         $software = Invoke-Command -ScriptBlock { choco.exe outdated --limitoutput } -ComputerName $ComputerName
         $rv = @()
         $software | %{
           $row = New-Object PSObject
           if ($_ -notlike "OutDated*" -and $_ -notlike " Output is*" -and $_ -notlike "")
           {
-            $tmp = $_ -split ("\|")
+          $tmp = $_ -split ("\|")
+          if ($tmp[1] -ne $tmp[2]) #fix for outdated over PS Remoting returning 
+          {
             $row | Add-Member NoteProperty -Name "Name" -value $tmp[0]
             $row | Add-Member NoteProperty -Name "Version" -value $tmp[1]
             $row | Add-Member NoteProperty -Name "VersionAvailable" -value $tmp[2]
             $row | Add-Member NoteProperty -Name "pinned" -value $tmp[3]
           }
-          $rv += $row
+        }
+        $rv += $row
         }
         $htmlbody += $rv | ConvertTo-Html -Fragment
         $htmlbody += $spacer
@@ -725,13 +844,14 @@ Process
   <li><a href="#Volume-Information">Volume Information</a></li>
   <li><a href="#Network-Interface-Information">Network Interface Information</a></li>
   <li><a href="#Software-Information">Software Information</a></li>
+  <li><a href="#NET-Framework-versions"</a>.NET Framework versions</li>
+  <li><a href="#Chocolatey-Configuration"</a>Chocolatey Configuration</li>
   <li><a href="#Chocolatey-Software-Information">Chocolatey Software Information</a></li>
   <li><a href="#Chocolatey-Outdated-Packages">Chocolatey Outdated Packages</a></li>
   <li><a href="#Oracle-Software-Information">Oracle Software Information</a></li>
   <li><a href="#Share-Information">Share Information</a></li>
 </ul>
 <p></p>
-
 "@
     $htmltail = "</body> </html>"
     $htmlhead = "<html>" + $(Get-Content $CssPath) + $htmlhead_template
