@@ -634,7 +634,7 @@ Process
       $software | %{
         $row = New-Object PSObject
         $tmp = $_ -split ("\|")
-        $row | Add-Member NoteProperty -Name "Name [status]" -value $tmp[0]
+        $row | Add-Member NoteProperty -Name "Name" -value $tmp[0]
         $row | Add-Member NoteProperty -Name "Description" -value $tmp[1]
         $rv += $row
       }
