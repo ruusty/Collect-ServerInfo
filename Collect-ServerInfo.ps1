@@ -7,10 +7,10 @@
     about Windows servers.
 
   .PARAMETER ComputerName
-    A description of the ComputerName parameter.
+    The remote computer.
 
   .PARAMETER skipSofware
-    Skip software because it is slow
+    Skip software
 
   .PARAMETER -Verbose
     See more detailed progress as the script is running.
@@ -73,6 +73,7 @@
                       - Added Oracle Software Section
                       - Added regions
     2016-07-21        - Wrapped WMI calls in Invoke-Command. These failed because of Server hardening
+    2016-08-03        - Added Smallworld image section
 #>
 [CmdletBinding()]
 param
@@ -119,12 +120,12 @@ Process
   # As on Windows 7 can't use Get-NetTCPConnection,Get-NetIPConfiguration
   #---------------------------------------------------------------------
   Write-Verbose "Collecting DNS Details"
-  
+
   $subhead = @"
   <p><a name="computer-dns-details"></a></p><h3 id="computer-dns-details">DNS Details<a href="#TOC">^</a></h3>
 "@
   $htmlbody += $subhead
-  
+
   try
   {
     $dnsInfo= nslookup.exe $ComputerName | out-string
@@ -137,29 +138,28 @@ Process
     $htmlbody += "<p>An error was encountered. $($_.Exception.Message)</p>"
     $htmlbody += $spacer
   }
-  
+
   #endregion nslookupTest
-  
   #region IpConfig
   #---------------------------------------------------------------------
-  # Collect computer IP config  
+  # Collect computer IP config
   # As on Windows 7 can't use Get-NetTCPConnection,Get-NetIPConfiguration
   #---------------------------------------------------------------------
   Write-Verbose "Collecting Windows IP Configuration"
-  
+
   $subhead = @"
   <p><a name="computer-windows-ip-configuration"></a></p><h3 id="computer-windows-ip-configuration">Windows IP Configuration<a href="#TOC">^</a></h3>
 "@
-  
+
   $htmlbody += $subhead
-  
+
   try
   {
     $ipConfigInfo = Invoke-Command -Computer $ComputerName  -ScriptBlock { & ipconfig.exe /all | out-string}
-    
+
     $htmlbody += "<pre>" + $ipConfigInfo + "</pre>"
     $htmlbody += $spacer
-    
+
   }
   catch
   {
@@ -474,7 +474,7 @@ Process
                     @{ Name = 'ConnectionName'; Expression = { $_.NetConnectionID } },
                     @{ Name = 'Enabled'; Expression = { $_.NetEnabled } },
                     @{ Name = 'Speed'; Expression = { $_.Speed/1000000 } })
-    
+
       $nwinfo = Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_NetworkAdapterConfiguration -ErrorAction STOP } |
       Select-Object Description, DHCPServer,
                     @{ Name = 'IpAddress'; Expression = { $_.IpAddress -join '; ' } },
@@ -548,7 +548,7 @@ Process
     <p><a name="#NET-Framework-versions"></a></p><h3 id="#NET-Framework-versions">$Title<a href="#TOC">^</a></h3>
 "@
   $htmlbody += $subhead
-  
+
   try
   {
     if (!$skipSoftware)
@@ -591,9 +591,8 @@ Process
     $htmlbody += "<p>An error was encountered. $($_.Exception.Message)</p>"
     $htmlbody += $spacer
   }
-  
+
   #endregion doNetFramework
-  
   #region ChocoConfig
   #---------------------------------------------------------------------
   # Collect Chocolatey software config and convert to HTML fragment
@@ -604,17 +603,17 @@ Process
     <p><a name="Chocolatey-Configuration"></a></p><h3 id="Chocolatey-Configuration">$Title<a href="#TOC">^</a></h3>
 "@
   $htmlbody += $subhead
-  
+
   if (!$skipChocolatey)
   {
     Write-Verbose "Collecting $Title"
-    
+
     try
     {
-      
+
       $htmlbody += "<h4>Chocolatey Source</h4>"
       $software = Invoke-Command -ScriptBlock { choco.exe source --limitoutput } -ComputerName $ComputerName
-      
+
       $rv = @()
       $software | %{
         $row = New-Object PSObject
@@ -625,11 +624,11 @@ Process
       }
       $htmlbody += $rv | ConvertTo-Html -Fragment
       $htmlbody += $spacer
-      
+
       # Get Source
       $htmlbody += "<h4>Chocolatey Features</h4>"
       $software = Invoke-Command -ScriptBlock { choco.exe features --limitoutput } -ComputerName $ComputerName
-      
+
       $rv = @()
       $software | %{
         $row = New-Object PSObject
@@ -652,9 +651,8 @@ Process
   {
     $htmlbody += "<p>Skipped</p>"
   }
-  
+
   #endregion ChocoConfig
-  
   #region ChocoInfo
   #---------------------------------------------------------------------
   # Collect Chocolatey software information and convert to HTML fragment
@@ -666,9 +664,9 @@ Process
   $htmlbody += $subhead
   if (!$skipChocolatey)
   {
-    
+
     Write-Verbose "Collecting Chocolatey software information"
-    
+
     try
     {
       $software = Invoke-Command -ScriptBlock { clist.exe --localonly --limitoutput } -ComputerName $ComputerName
@@ -694,7 +692,42 @@ Process
   {
     $htmlbody += "<p>Skipped</p>"
   }
-  #endregion ChocoInfo   
+    #endregion ChocoInfo
+    #region smallworld_images
+    #---------------------------------------------------------------------
+    # Collect smallworld_images versions and name and convert to HTML fragment
+    #---------------------------------------------------------------------
+    $Title = "Smallworld Images"
+    Write-Verbose "Collecting $Title information"
+    $subhead = @"
+    <p><a name="#smallworld_images"></a></p><h3 id="#smallworld_images">$Title<a href="#TOC">^</a></h3>
+"@
+    
+    $htmlbody += $subhead
+    
+    try
+    {
+        $csinfo = Invoke-Command -computer $ComputerName -ScriptBlock {
+            resolve-path "d:\smallworld\ched_*\images\*.msf" | %{
+                $info = @(Get-Content $_.path | Select-Object -skip 1 | % { $_.split("/.") });
+                $fileinfo = [System.io.Fileinfo]$_.Path
+                $imgObject = New-Object PSObject
+                $imgObject | Add-Member NoteProperty -Name "Image Name" -Value $info[1]
+                $imgObject | Add-Member NoteProperty -Name "Image sha" -Value $info[0]
+                $imgObject | Add-Member NoteProperty -Name "Mod Date" -Value $fileinfo.LastWriteTime
+                $imgObject
+            }
+        }
+        $htmlbody += $csinfo | ConvertTo-Html -Fragment
+        $htmlbody += $spacer
+    }
+    catch
+    {
+        Write-Warning $_.Exception.Message
+        $htmlbody += "<p>An error was encountered. $($_.Exception.Message)</p>"
+        $htmlbody += $spacer
+    }
+    #endregion smallworld_images
     #region ChocoOutdated
     #---------------------------------------------------------------------
     # Collect Chocolatey software information and convert to HTML fragment
@@ -706,9 +739,9 @@ Process
     $htmlbody += $subhead
     if (!$skipChocolatey)
     {
-    
+
     Write-Verbose "Collecting Chocolatey Outdated Packages"
-    
+
     try
     {
         $software = Invoke-Command -ScriptBlock { choco.exe outdated --limitoutput } -ComputerName $ComputerName
@@ -718,7 +751,7 @@ Process
           if ($_ -notlike "OutDated*" -and $_ -notlike " Output is*" -and $_ -notlike "")
           {
           $tmp = $_ -split ("\|")
-          if ($tmp[1] -ne $tmp[2]) #fix for outdated over PS Remoting returning 
+          if ($tmp[1] -ne $tmp[2]) #fix for outdated over PS Remoting returning
           {
             $row | Add-Member NoteProperty -Name "Name" -value $tmp[0]
             $row | Add-Member NoteProperty -Name "Version" -value $tmp[1]
@@ -742,7 +775,7 @@ Process
     {
       $htmlbody += "<p>Skipped</p>"
     }
-    #endregion ChocoOutdated    
+    #endregion ChocoOutdated
     #region OracleInfo
     #---------------------------------------------------------------------
     # Collect Oracle software information and convert to HTML fragment
@@ -847,6 +880,7 @@ Process
   <li><a href="#NET-Framework-versions"</a>.NET Framework versions</li>
   <li><a href="#Chocolatey-Configuration"</a>Chocolatey Configuration</li>
   <li><a href="#Chocolatey-Software-Information">Chocolatey Software Information</a></li>
+  <li><a href="#smallworld_images"</a>Smallworld Images</li>
   <li><a href="#Chocolatey-Outdated-Packages">Chocolatey Outdated Packages</a></li>
   <li><a href="#Oracle-Software-Information">Oracle Software Information</a></li>
   <li><a href="#Share-Information">Share Information</a></li>
