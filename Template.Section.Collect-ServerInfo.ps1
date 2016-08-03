@@ -2,27 +2,25 @@
 Template for adding to Collect-ServerInfo
 #>
 
+#region __xyz__
 #---------------------------------------------------------------------
-# Collect computer system information and convert to HTML fragment
+# Collect __xyz__ information and convert to HTML fragment
 #---------------------------------------------------------------------
+$Title = "__xyz__"
+Write-Verbose "Collecting __xyz__ information"
+$subhead = @"
+    <p><a name="#__xyz__"></a></p><h3 id="#__xyz__">$Title<a href="#TOC">^</a></h3>
+"@
 
-Write-Verbose "Collecting computer system information"
-
-$subhead = "<h3>Computer System Information</h3>"
 $htmlbody += $subhead
 
 try
 {
-  $csinfo = Get-WmiObject Win32_ComputerSystem -ComputerName $ComputerName -ErrorAction STOP |
+    $csinfo = Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_ComputerSystem -ErrorAction STOP } |
   Select-Object Name, Manufacturer, Model,
                 @{ Name = 'Physical Processors'; Expression = { $_.NumberOfProcessors } },
                 @{ Name = 'Logical Processors'; Expression = { $_.NumberOfLogicalProcessors } },
-                @{
-    Name = 'Total Physical Memory (Gb)'; Expression = {
-      $tpm = $_.TotalPhysicalMemory/1GB;
-      "{0:F0}" -f $tpm
-    }
-  },
+                @{ Name = 'Total Physical Memory (Gb)'; Expression = {      $tpm = $_.TotalPhysicalMemory/1GB;"{0:F0}" -f $tpm }},
                 DnsHostName, Domain
   
   $htmlbody += $csinfo | ConvertTo-Html -Fragment
@@ -36,3 +34,7 @@ catch
   $htmlbody += $spacer
 }
 
+#endregion __xyz__
+
+and in the Collate region
+<li><a href="#__xyz__"</a>__xyz__</li>
