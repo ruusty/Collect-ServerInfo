@@ -708,7 +708,7 @@ Process
     try
     {
         $csinfo = Invoke-Command -computer $ComputerName -ScriptBlock {
-            resolve-path "d:\smallworld\ched_*\images\*.msf" | %{
+            resolve-path "d:\smallworld\ched_*\images\*.msf" -ErrorAction SilentlyContinue | %{
                 $info = @(Get-Content $_.path | Select-Object -skip 1 | % { $_.split("/.") });
                 $fileinfo = [System.io.Fileinfo]$_.Path
                 $imgObject = New-Object PSObject
@@ -718,7 +718,7 @@ Process
                 $imgObject
             }
         }
-        $htmlbody += $csinfo | ConvertTo-Html -Fragment
+        $htmlbody += $csinfo | select * -ExcludeProperty RunspaceId, PSComputerName, PSShowComputerName | ConvertTo-Html -Fragment
         $htmlbody += $spacer
     }
     catch
