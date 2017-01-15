@@ -1,21 +1,28 @@
 # Collect-ServerInfo
-This PowerShell script runs a series of WMI and other queries to collect information about Windows servers.
+This PowerShell script runs a series of WMI and other queries to collect information about Windows machines.
 
-Each server's results are output to a HTML file.
+Each machine's results are output to a HTML file.
 
 ##Parameters
 - **-Verbose**, See more detailed progress as the script is running.
 
 ##Examples
 
-Collect information about a single server named SERVER1.
+Collect information about a local machine.
+```
+.\Collect-ServerInfo.ps1
+```
+
+
+
+Collect information about a single machine named SERVER1.
 ```
 .\Collect-ServerInfo.ps1 SERVER1
 ```
 
 Collect information about multiple servers.
 ```
-"SERVER1","SERVER2","SERVER3" | .\Collect-ServerInfo.ps1
+"SERVER1","SERVER2","SERVER3" |%{ .\Collect-ServerInfo.ps1 $_}
 ```
 
 Collect information about all servers in Active Directory.
