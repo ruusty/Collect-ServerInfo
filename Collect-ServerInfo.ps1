@@ -93,12 +93,10 @@ param
 Begin
 {
   #Initialize
-#  Write-Verbose $("Initializing {0}" -f $ComputerName)
-  #  $PSBoundParameters | out-string | write-verbose  
   if ($ComputerName)
   {
     $ComputerName = $ComputerName.ToUpper()
-    function invokeLocalCommand
+    function InvokeCommand
     {
       Invoke-Command -ComputerName $ComputerName @args
     }
@@ -106,7 +104,7 @@ Begin
   else
   {
     $ComputerName = $env:COMPUTERNAME.ToUpper()
-    function invokeLocalCommand
+    function InvokeCommand
     {
       Invoke-Command @args
     }
@@ -174,7 +172,7 @@ Process
 
   try
   {
-    $ipConfigInfo = InvokeLocalCommand   -ScriptBlock { & ipconfig.exe /all | out-string}
+    $ipConfigInfo = InvokeCommand   -ScriptBlock { & ipconfig.exe /all | out-string}
 
     $htmlbody += "<pre>" + $ipConfigInfo + "</pre>"
     $htmlbody += $spacer
@@ -201,7 +199,7 @@ Process
 
     try
     {
-    $csinfo = InvokeLocalCommand  -ScriptBlock { Get-WmiObject Win32_ComputerSystem -ErrorAction STOP } |
+    $csinfo = InvokeCommand  -ScriptBlock { Get-WmiObject Win32_ComputerSystem -ErrorAction STOP } |
       Select-Object Name, Manufacturer, Model,
                     @{ Name = 'Physical Processors'; Expression = { $_.NumberOfProcessors } },
                     @{ Name = 'Logical Processors'; Expression = { $_.NumberOfLogicalProcessors } },
@@ -241,7 +239,7 @@ Process
 
     try
     {
-    $osinfo = InvokeLocalCommand  -ScriptBlock { Get-WmiObject Win32_OperatingSystem -ErrorAction STOP} |
+    $osinfo = InvokeCommand  -ScriptBlock { Get-WmiObject Win32_OperatingSystem -ErrorAction STOP} |
     Select-Object @{ Name = 'Operating System'; Expression = { $_.Caption } },
                     @{ Name = 'Architecture'; Expression = { $_.OSArchitecture } },
                     Version, Organization,
@@ -277,7 +275,7 @@ Process
 
     try
     {
-      $poshInfo = InvokeLocalCommand -ScriptBlock { [PSCustomObject]$PSVersionTable }
+      $poshInfo = InvokeCommand -ScriptBlock { [PSCustomObject]$PSVersionTable }
       $poshCompatibleVersions = [PSCustomObject] $poshInfo | Select-Object PSCompatibleVersions
       $poshVersions = $poshInfo | Select-Object PSVersion, WSManStackVersion, SerializationVersion, CLRVersion, BuildVersion, PSRemotingProtocolVersion
       $compverNum=@()
@@ -314,7 +312,7 @@ Process
     try
     {
       $memorybanks = @()
-      $physicalmemoryinfo = @(InvokeLocalCommand  -ScriptBlock { Get-WmiObject Win32_PhysicalMemory -ErrorAction STOP } |
+      $physicalmemoryinfo = @(InvokeCommand  -ScriptBlock { Get-WmiObject Win32_PhysicalMemory -ErrorAction STOP } |
       Select-Object DeviceLocator, Manufacturer, Speed, Capacity)
 
       foreach ($bank in $physicalmemoryinfo)
@@ -355,7 +353,7 @@ Process
 
     try
     {
-      $pagefileinfo = InvokeLocalCommand  -ScriptBlock { Get-WmiObject Win32_PageFileUsage -ErrorAction STOP } |
+      $pagefileinfo = InvokeCommand  -ScriptBlock { Get-WmiObject Win32_PageFileUsage -ErrorAction STOP } |
       Select-Object @{ Name = 'Pagefile Name'; Expression = { $_.Name } },
                     @{ Name = 'Allocated Size (Mb)'; Expression = { $_.AllocatedBaseSize } }
 
@@ -386,7 +384,7 @@ Process
 
     try
     {
-      $biosinfo = InvokeLocalCommand  -ScriptBlock { Get-WmiObject Win32_Bios -ErrorAction STOP } |
+      $biosinfo = InvokeCommand  -ScriptBlock { Get-WmiObject Win32_Bios -ErrorAction STOP } |
       Select-Object Status, Version, Manufacturer,
                     @{
         Name = 'Release Date'; Expression = {
@@ -423,7 +421,7 @@ Process
 
     try
     {
-      $diskinfo = InvokeLocalCommand  -ScriptBlock { Get-WmiObject Win32_LogicalDisk -ErrorAction STOP } |
+      $diskinfo = InvokeCommand  -ScriptBlock { Get-WmiObject Win32_LogicalDisk -ErrorAction STOP } |
       Select-Object DeviceID, FileSystem, VolumeName,
                     @{ Expression = { $_.Size /1Gb -as [int] }; Label = "Total Size (GB)" },
                     @{ Expression = { $_.Freespace / 1Gb -as [int] }; Label = "Free Space (GB)" }
@@ -455,7 +453,7 @@ Process
 
     try
     {
-      $volinfo = InvokeLocalCommand  -ScriptBlock { Get-WmiObject Win32_Volume -ErrorAction STOP } |
+      $volinfo = InvokeCommand  -ScriptBlock { Get-WmiObject Win32_Volume -ErrorAction STOP } |
       Select-Object Label, Name, DeviceID, SystemVolume,
                     @{ Expression = { $_.Capacity /1Gb -as [int] }; Label = "Total Size (GB)" },
                     @{ Expression = { $_.Freespace / 1Gb -as [int] }; Label = "Free Space (GB)" }
@@ -488,13 +486,13 @@ Process
     try
     {
       $nics = @()
-      $nicinfo = @(InvokeLocalCommand  -ScriptBlock { Get-WmiObject Win32_NetworkAdapter -ErrorAction STOP } | Where { $_.PhysicalAdapter } |
+      $nicinfo = @(InvokeCommand  -ScriptBlock { Get-WmiObject Win32_NetworkAdapter -ErrorAction STOP } | Where { $_.PhysicalAdapter } |
       Select-Object Name, AdapterType, MACAddress,
                     @{ Name = 'ConnectionName'; Expression = { $_.NetConnectionID } },
                     @{ Name = 'Enabled'; Expression = { $_.NetEnabled } },
                     @{ Name = 'Speed'; Expression = { $_.Speed/1000000 } })
 
-      $nwinfo = InvokeLocalCommand  -ScriptBlock { Get-WmiObject Win32_NetworkAdapterConfiguration -ErrorAction STOP } |
+      $nwinfo = InvokeCommand  -ScriptBlock { Get-WmiObject Win32_NetworkAdapterConfiguration -ErrorAction STOP } |
       Select-Object Description, DHCPServer,
                     @{ Name = 'IpAddress'; Expression = { $_.IpAddress -join '; ' } },
                     @{ Name = 'IpSubnet'; Expression = { $_.IpSubnet -join '; ' } },
@@ -542,7 +540,7 @@ Process
       Write-Verbose "Collecting software information"
       try
       {
-      $software = InvokeLocalCommand -ScriptBlock { Get-ItemProperty @("HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*") | Sort-Object -Property "DisplayName" | Select-Object DisplayName, Publisher, DisplayVersion, InstallDate }
+      $software = InvokeCommand -ScriptBlock { Get-ItemProperty @("HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*") | Sort-Object -Property "DisplayName" | Select-Object DisplayName, Publisher, DisplayVersion, InstallDate }
       $htmlbody += $software | Where-Object -property "DisplayName" | select * -ExcludeProperty RunspaceId, PSComputerName, PSShowComputerName | ConvertTo-Html -Fragment
         $htmlbody += $spacer
       }
@@ -573,7 +571,7 @@ Process
     if (!$skipSoftware)
     {
       Write-Verbose "Collecting $Title"
-      $software = InvokeLocalCommand  -ScriptBlock {
+      $software = InvokeCommand  -ScriptBlock {
         Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP' -recurse |
         Get-ItemProperty -name Version, Release -EA 0 |
         Where { $_.PSChildName -match '^(?!S)\p{L}' } |
@@ -631,7 +629,7 @@ Process
     {
 
       $htmlbody += "<h4>Chocolatey Source</h4>"
-      $software = InvokeLocalCommand  -ScriptBlock { choco.exe source --limitoutput }
+      $software = InvokeCommand  -ScriptBlock { choco.exe source --limitoutput }
 
       $rv = @()
       $software | %{
@@ -646,7 +644,7 @@ Process
 
       # Get Source
       $htmlbody += "<h4>Chocolatey Features</h4>"
-      $software = InvokeLocalCommand  -ScriptBlock { choco.exe features --limitoutput }
+      $software = InvokeCommand  -ScriptBlock { choco.exe features --limitoutput }
 
       $rv = @()
       $software | %{
@@ -688,7 +686,7 @@ Process
 
     try
     {
-      $software = InvokeLocalCommand -ScriptBlock { clist.exe --localonly --limitoutput }
+      $software = InvokeCommand -ScriptBlock { clist.exe --localonly --limitoutput }
       $rv = @()
       $software | %{
         $row = New-Object PSObject
@@ -726,7 +724,7 @@ Process
 
     try
     {
-        $csinfo = InvokeLocalCommand  -ScriptBlock {
+        $csinfo = InvokeCommand  -ScriptBlock {
             resolve-path "d:\smallworld\ched_*\images\*.msf" -ErrorAction SilentlyContinue | %{
                 $info = @(Get-Content $_.path | Select-Object -skip 1 | % { $_.split("/.") });
                 $fileinfo = [System.io.Fileinfo]$_.Path
@@ -763,7 +761,7 @@ Process
 
     try
     {
-        $software = InvokeLocalCommand  -ScriptBlock { choco.exe outdated --limitoutput }
+        $software = InvokeCommand  -ScriptBlock { choco.exe outdated --limitoutput }
         $rv = @()
         $software | %{
           $row = New-Object PSObject
@@ -813,7 +811,7 @@ Process
       $htmlbody += $spacer
       if (Test-Path $OraPath -Type container)
       {
-        $OracleInfo = InvokeLocalCommand -ScriptBlock {
+        $OracleInfo = InvokeCommand -ScriptBlock {
           Get-ChildItem -Path $OraPath -Filter "opatch.bat" -recurse | % {
             "<b>" + $_.fullname + "</b>"
             "<pre>"
@@ -856,7 +854,7 @@ Process
 
     try
   {
-      $shareinfo = InvokeLocalCommand  -ScriptBlock { Get-WmiObject Win32_Share -ErrorAction STOP } |
+      $shareinfo = InvokeCommand  -ScriptBlock { Get-WmiObject Win32_Share -ErrorAction STOP } |
       Select-Object Name, Path, Description
       $htmlbody += $shareinfo | ConvertTo-Html -Fragment
       $htmlbody += $spacer

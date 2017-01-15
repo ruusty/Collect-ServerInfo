@@ -16,7 +16,7 @@ $htmlbody += $subhead
 
 try
 {
-    $csinfo = Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_ComputerSystem -ErrorAction STOP } |
+    $csinfo = InvokeCommand -ScriptBlock { Get-WmiObject Win32_ComputerSystem -ErrorAction STOP } |
   Select-Object Name, Manufacturer, Model,
                 @{ Name = 'Physical Processors'; Expression = { $_.NumberOfProcessors } },
                 @{ Name = 'Logical Processors'; Expression = { $_.NumberOfLogicalProcessors } },
