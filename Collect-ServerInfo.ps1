@@ -1,13 +1,13 @@
 ﻿<#
   .SYNOPSIS
-    Collect-ServerInfo.ps1 - PowerShell script to collect information about Windows servers
+    PowerShell script to collect information about Windows machines
 
   .DESCRIPTION
     This PowerShell script runs a series of WMI and other queries to collect information
-    about Windows servers.
+    about Windows machines.
 
   .PARAMETER ComputerName
-    The remote computer.
+    The machine to collect information. If not defined assume local machine $env:computername
 
   .PARAMETER skipSofware
     Skip software
@@ -16,11 +16,15 @@
     See more detailed progress as the script is running.
 
   .EXAMPLE
+    .\Collect-ServerInfo.ps1 
+    Collect information current machine
+
+  .EXAMPLE
     .\Collect-ServerInfo.ps1 SERVER1
     Collect information about a single server.
 
   .EXAMPLE
-    "SERVER1","SERVER2","SERVER3" | .\Collect-ServerInfo.ps1
+    "SERVER1","SERVER2","SERVER3" |%{ .\Collect-ServerInfo.ps1 $_}
     Collect information about multiple servers.
 
   .EXAMPLE
@@ -28,7 +32,7 @@
     Collects information about all servers in Active Directory.
 
   .OUTPUTS
-    Each server's results are output to HTML.
+    Each server's results are output to a html file named  machine.html
 
   .NOTES
     Written by: Paul Cunningham
@@ -74,14 +78,12 @@
                       - Added regions
     2016-07-21        - Wrapped WMI calls in Invoke-Command. These failed because of Server hardening
     2016-08-03        - Added Smallworld image section
+    2017-01-15        - Wrapped Invoke-Command to differentiate local and remote machines from $ComputerName
 #>
 [CmdletBinding()]
 param
 (
-  [Parameter(ValueFromPipeline = $true,
-             Position = 1)]
-  [string]
-  $ComputerName = $env:COMPUTERNAME,
+  [string]$ComputerName,
   [string]$CssPath = $(Join-Path $PSScriptRoot "Collect-ServerInfo.css"),
   [switch]$skipSoftware,
   [switch]$skipOracle,
@@ -90,29 +92,46 @@ param
 
 Begin
 {
-    #Initialize
-    Write-Verbose "Initializing"
-
+  #Initialize
+#  Write-Verbose $("Initializing {0}" -f $ComputerName)
+  #  $PSBoundParameters | out-string | write-verbose  
+  if ($ComputerName)
+  {
+    $ComputerName = $ComputerName.ToUpper()
+    function invokeLocalCommand
+    {
+      Invoke-Command -ComputerName $ComputerName @args
+    }
+  }
+  else
+  {
+    $ComputerName = $env:COMPUTERNAME.ToUpper()
+    function invokeLocalCommand
+    {
+      Invoke-Command @args
+    }
+  }
+  @("`$ComputerName=>$ComputerName"), $function:invokeLocalCommand | out-string | Write-Verbose
+  
+  Write-Verbose "=====> Processing $ComputerName <====="
 }
+
+
 
 Process
 {
 
-    #---------------------------------------------------------------------
-    # Process each ComputerName
-    #---------------------------------------------------------------------
+  #---------------------------------------------------------------------
+  # Process ComputerName
+  #---------------------------------------------------------------------
+  if (!($PSCmdlet.MyInvocation.BoundParameters["Verbose"].IsPresent))
+  {
+      Write-Host "Processing $ComputerName"
+  }
 
-    if (!($PSCmdlet.MyInvocation.BoundParameters["Verbose"].IsPresent))
-    {
-        Write-Host "Processing $ComputerName"
-    }
-
-    Write-Verbose "=====> Processing $ComputerName <====="
-
-    $htmlreport = @()
-    $htmlbody = @()
-    $htmlfile = "$($ComputerName).html"
-    $spacer = "<br />"
+  $htmlreport = @()
+  $htmlbody = @()
+  $spacer = "<br />"
 
   #region nslookupTest
   #---------------------------------------------------------------------
@@ -155,7 +174,7 @@ Process
 
   try
   {
-    $ipConfigInfo = Invoke-Command -Computer $ComputerName  -ScriptBlock { & ipconfig.exe /all | out-string}
+    $ipConfigInfo = InvokeLocalCommand   -ScriptBlock { & ipconfig.exe /all | out-string}
 
     $htmlbody += "<pre>" + $ipConfigInfo + "</pre>"
     $htmlbody += $spacer
@@ -168,7 +187,7 @@ Process
     $htmlbody += $spacer
   }
   #endregion IpConfig
-  #region CompSystem
+    #region CompSystem
     #---------------------------------------------------------------------
     # Collect computer system information and convert to HTML fragment
     #---------------------------------------------------------------------
@@ -182,7 +201,7 @@ Process
 
     try
     {
-    $csinfo = Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_ComputerSystem -ErrorAction STOP } |
+    $csinfo = InvokeLocalCommand  -ScriptBlock { Get-WmiObject Win32_ComputerSystem -ErrorAction STOP } |
       Select-Object Name, Manufacturer, Model,
                     @{ Name = 'Physical Processors'; Expression = { $_.NumberOfProcessors } },
                     @{ Name = 'Logical Processors'; Expression = { $_.NumberOfLogicalProcessors } },
@@ -222,7 +241,7 @@ Process
 
     try
     {
-    $osinfo = Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_OperatingSystem -ErrorAction STOP} |
+    $osinfo = InvokeLocalCommand  -ScriptBlock { Get-WmiObject Win32_OperatingSystem -ErrorAction STOP} |
     Select-Object @{ Name = 'Operating System'; Expression = { $_.Caption } },
                     @{ Name = 'Architecture'; Expression = { $_.OSArchitecture } },
                     Version, Organization,
@@ -258,7 +277,7 @@ Process
 
     try
     {
-      $poshInfo = Invoke-Command -computername $ComputerName -ScriptBlock { [PSCustomObject]$PSVersionTable }
+      $poshInfo = InvokeLocalCommand -ScriptBlock { [PSCustomObject]$PSVersionTable }
       $poshCompatibleVersions = [PSCustomObject] $poshInfo | Select-Object PSCompatibleVersions
       $poshVersions = $poshInfo | Select-Object PSVersion, WSManStackVersion, SerializationVersion, CLRVersion, BuildVersion, PSRemotingProtocolVersion
       $compverNum=@()
@@ -295,7 +314,7 @@ Process
     try
     {
       $memorybanks = @()
-      $physicalmemoryinfo = @(Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_PhysicalMemory -ErrorAction STOP } |
+      $physicalmemoryinfo = @(InvokeLocalCommand  -ScriptBlock { Get-WmiObject Win32_PhysicalMemory -ErrorAction STOP } |
       Select-Object DeviceLocator, Manufacturer, Speed, Capacity)
 
       foreach ($bank in $physicalmemoryinfo)
@@ -336,7 +355,7 @@ Process
 
     try
     {
-      $pagefileinfo = Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_PageFileUsage -ErrorAction STOP } |
+      $pagefileinfo = InvokeLocalCommand  -ScriptBlock { Get-WmiObject Win32_PageFileUsage -ErrorAction STOP } |
       Select-Object @{ Name = 'Pagefile Name'; Expression = { $_.Name } },
                     @{ Name = 'Allocated Size (Mb)'; Expression = { $_.AllocatedBaseSize } }
 
@@ -367,7 +386,7 @@ Process
 
     try
     {
-      $biosinfo = Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_Bios -ErrorAction STOP } |
+      $biosinfo = InvokeLocalCommand  -ScriptBlock { Get-WmiObject Win32_Bios -ErrorAction STOP } |
       Select-Object Status, Version, Manufacturer,
                     @{
         Name = 'Release Date'; Expression = {
@@ -404,7 +423,7 @@ Process
 
     try
     {
-      $diskinfo = Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_LogicalDisk -ErrorAction STOP } |
+      $diskinfo = InvokeLocalCommand  -ScriptBlock { Get-WmiObject Win32_LogicalDisk -ErrorAction STOP } |
       Select-Object DeviceID, FileSystem, VolumeName,
                     @{ Expression = { $_.Size /1Gb -as [int] }; Label = "Total Size (GB)" },
                     @{ Expression = { $_.Freespace / 1Gb -as [int] }; Label = "Free Space (GB)" }
@@ -436,7 +455,7 @@ Process
 
     try
     {
-      $volinfo = Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_Volume -ErrorAction STOP } |
+      $volinfo = InvokeLocalCommand  -ScriptBlock { Get-WmiObject Win32_Volume -ErrorAction STOP } |
       Select-Object Label, Name, DeviceID, SystemVolume,
                     @{ Expression = { $_.Capacity /1Gb -as [int] }; Label = "Total Size (GB)" },
                     @{ Expression = { $_.Freespace / 1Gb -as [int] }; Label = "Free Space (GB)" }
@@ -469,13 +488,13 @@ Process
     try
     {
       $nics = @()
-      $nicinfo = @(Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_NetworkAdapter -ErrorAction STOP } | Where { $_.PhysicalAdapter } |
+      $nicinfo = @(InvokeLocalCommand  -ScriptBlock { Get-WmiObject Win32_NetworkAdapter -ErrorAction STOP } | Where { $_.PhysicalAdapter } |
       Select-Object Name, AdapterType, MACAddress,
                     @{ Name = 'ConnectionName'; Expression = { $_.NetConnectionID } },
                     @{ Name = 'Enabled'; Expression = { $_.NetEnabled } },
                     @{ Name = 'Speed'; Expression = { $_.Speed/1000000 } })
 
-      $nwinfo = Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_NetworkAdapterConfiguration -ErrorAction STOP } |
+      $nwinfo = InvokeLocalCommand  -ScriptBlock { Get-WmiObject Win32_NetworkAdapterConfiguration -ErrorAction STOP } |
       Select-Object Description, DHCPServer,
                     @{ Name = 'IpAddress'; Expression = { $_.IpAddress -join '; ' } },
                     @{ Name = 'IpSubnet'; Expression = { $_.IpSubnet -join '; ' } },
@@ -523,8 +542,8 @@ Process
       Write-Verbose "Collecting software information"
       try
       {
-      $software = Invoke-Command -computer $ComputerName -ScriptBlock { Get-ItemProperty @("HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*") | Sort-Object -Property "DisplayName" } | Select-Object DisplayName, Publisher, DisplayVersion, InstallDate
-      $htmlbody += $software | select * -ExcludeProperty RunspaceId, PSComputerName, PSShowComputerName | ConvertTo-Html -Fragment
+      $software = InvokeLocalCommand -ScriptBlock { Get-ItemProperty @("HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*") | Sort-Object -Property "DisplayName" | Select-Object DisplayName, Publisher, DisplayVersion, InstallDate }
+      $htmlbody += $software | Where-Object -property "DisplayName" | select * -ExcludeProperty RunspaceId, PSComputerName, PSShowComputerName | ConvertTo-Html -Fragment
         $htmlbody += $spacer
       }
       catch
@@ -554,7 +573,7 @@ Process
     if (!$skipSoftware)
     {
       Write-Verbose "Collecting $Title"
-      $software = Invoke-Command -computer $ComputerName -ScriptBlock {
+      $software = InvokeLocalCommand  -ScriptBlock {
         Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP' -recurse |
         Get-ItemProperty -name Version, Release -EA 0 |
         Where { $_.PSChildName -match '^(?!S)\p{L}' } |
@@ -612,7 +631,7 @@ Process
     {
 
       $htmlbody += "<h4>Chocolatey Source</h4>"
-      $software = Invoke-Command -Computer $ComputerName -ScriptBlock { choco.exe source --limitoutput }
+      $software = InvokeLocalCommand  -ScriptBlock { choco.exe source --limitoutput }
 
       $rv = @()
       $software | %{
@@ -627,7 +646,7 @@ Process
 
       # Get Source
       $htmlbody += "<h4>Chocolatey Features</h4>"
-      $software = Invoke-Command -Computer $ComputerName -ScriptBlock { choco.exe features --limitoutput }
+      $software = InvokeLocalCommand  -ScriptBlock { choco.exe features --limitoutput }
 
       $rv = @()
       $software | %{
@@ -669,7 +688,7 @@ Process
 
     try
     {
-      $software = Invoke-Command-Computer $ComputerName -ScriptBlock { clist.exe --localonly --limitoutput }
+      $software = InvokeLocalCommand -ScriptBlock { clist.exe --localonly --limitoutput }
       $rv = @()
       $software | %{
         $row = New-Object PSObject
@@ -707,7 +726,7 @@ Process
 
     try
     {
-        $csinfo = Invoke-Command -computer $ComputerName -ScriptBlock {
+        $csinfo = InvokeLocalCommand  -ScriptBlock {
             resolve-path "d:\smallworld\ched_*\images\*.msf" -ErrorAction SilentlyContinue | %{
                 $info = @(Get-Content $_.path | Select-Object -skip 1 | % { $_.split("/.") });
                 $fileinfo = [System.io.Fileinfo]$_.Path
@@ -744,7 +763,7 @@ Process
 
     try
     {
-        $software = Invoke-Command -Computer $ComputerName -ScriptBlock { choco.exe outdated --limitoutput }
+        $software = InvokeLocalCommand  -ScriptBlock { choco.exe outdated --limitoutput }
         $rv = @()
         $software | %{
           $row = New-Object PSObject
@@ -784,15 +803,18 @@ Process
       $subhead = @"
     <p><a name="Oracle-Software-Information"></a></p><h3 id="Oracle Software Information">Oracle Software Information<a href="#TOC">^</a></h3>
 "@
+    $OraPath="c:\oracle"
     $htmlbody += $subhead
     if (! $skipOracle)
     {
       Write-Verbose "Collecting Oracle Software Information"
       try
       {
-        $htmlbody += $spacer
-        $OracleInfo = Invoke-Command -Computer $ComputerName -ScriptBlock {
-          Get-ChildItem -Path "c:\oracle" -Filter "opatch.bat" -recurse | % {
+      $htmlbody += $spacer
+      if (Test-Path $OraPath -Type container)
+      {
+        $OracleInfo = InvokeLocalCommand -ScriptBlock {
+          Get-ChildItem -Path $OraPath -Filter "opatch.bat" -recurse | % {
             "<b>" + $_.fullname + "</b>"
             "<pre>"
             & $_.fullname lsinventory -detail
@@ -800,20 +822,24 @@ Process
           }
         }
         $htmlbody += $OracleInfo | Out-String
-
       }
-      catch
+      else
       {
-        Write-Warning $_.Exception.Message
-        $htmlbody += "<p>An error was encountered. $($_.Exception.Message)</p>"
-        $htmlbody += $spacer
+        $htmlbody += $("Oracle not found:<code>{0}<code/>"  -f $OraPath)
       }
     }
-    else
+    catch
     {
-      $htmlbody += "<p>Skipped</p>"
+      Write-Warning $_.Exception.Message
+      $htmlbody += "<p>An error was encountered. $($_.Exception.Message)</p>"
+      $htmlbody += $spacer
     }
-    #endregion OracleInfo
+  }
+  else
+  {
+    $htmlbody += "<p>Skipped</p>"
+  }
+  #endregion OracleInfo
     #region ShareInfo
     #---------------------------------------------------------------------
     # Collect Share information and convert to HTML fragment
@@ -830,7 +856,7 @@ Process
 
     try
   {
-      $shareinfo = Invoke-Command -computer $ComputerName -ScriptBlock { Get-WmiObject Win32_Share -ErrorAction STOP } |
+      $shareinfo = InvokeLocalCommand  -ScriptBlock { Get-WmiObject Win32_Share -ErrorAction STOP } |
       Select-Object Name, Path, Description
       $htmlbody += $shareinfo | ConvertTo-Html -Fragment
       $htmlbody += $spacer
@@ -887,6 +913,7 @@ Process
 </ul>
 <p></p>
 "@
+    $htmlfile = "$($ComputerName).html"
     $htmltail = "</body> </html>"
     $htmlhead = "<html>" + $(Get-Content $CssPath) + $htmlhead_template
     $htmlreport = $htmlhead + $htmlbody + $htmltail
