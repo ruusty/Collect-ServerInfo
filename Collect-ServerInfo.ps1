@@ -258,7 +258,7 @@ Process
 
     try
     {
-      $poshInfo = Invoke-Command -ScriptBlock { [PSCustomObject]$PSVersionTable } -computername $ComputerName
+      $poshInfo = Invoke-Command -computername $ComputerName -ScriptBlock { [PSCustomObject]$PSVersionTable }
       $poshCompatibleVersions = [PSCustomObject] $poshInfo | Select-Object PSCompatibleVersions
       $poshVersions = $poshInfo | Select-Object PSVersion, WSManStackVersion, SerializationVersion, CLRVersion, BuildVersion, PSRemotingProtocolVersion
       $compverNum=@()
@@ -612,7 +612,7 @@ Process
     {
 
       $htmlbody += "<h4>Chocolatey Source</h4>"
-      $software = Invoke-Command -ScriptBlock { choco.exe source --limitoutput } -ComputerName $ComputerName
+      $software = Invoke-Command -Computer $ComputerName -ScriptBlock { choco.exe source --limitoutput }
 
       $rv = @()
       $software | %{
@@ -627,7 +627,7 @@ Process
 
       # Get Source
       $htmlbody += "<h4>Chocolatey Features</h4>"
-      $software = Invoke-Command -ScriptBlock { choco.exe features --limitoutput } -ComputerName $ComputerName
+      $software = Invoke-Command -Computer $ComputerName -ScriptBlock { choco.exe features --limitoutput }
 
       $rv = @()
       $software | %{
@@ -669,7 +669,7 @@ Process
 
     try
     {
-      $software = Invoke-Command -ScriptBlock { clist.exe --localonly --limitoutput } -ComputerName $ComputerName
+      $software = Invoke-Command-Computer $ComputerName -ScriptBlock { clist.exe --localonly --limitoutput }
       $rv = @()
       $software | %{
         $row = New-Object PSObject
@@ -702,9 +702,9 @@ Process
     $subhead = @"
     <p><a name="#smallworld_images"></a></p><h3 id="#smallworld_images">$Title<a href="#TOC">^</a></h3>
 "@
-    
+
     $htmlbody += $subhead
-    
+
     try
     {
         $csinfo = Invoke-Command -computer $ComputerName -ScriptBlock {
@@ -744,7 +744,7 @@ Process
 
     try
     {
-        $software = Invoke-Command -ScriptBlock { choco.exe outdated --limitoutput } -ComputerName $ComputerName
+        $software = Invoke-Command -Computer $ComputerName -ScriptBlock { choco.exe outdated --limitoutput }
         $rv = @()
         $software | %{
           $row = New-Object PSObject
@@ -791,14 +791,14 @@ Process
       try
       {
         $htmlbody += $spacer
-        $OracleInfo = Invoke-Command -ScriptBlock {
+        $OracleInfo = Invoke-Command -Computer $ComputerName -ScriptBlock {
           Get-ChildItem -Path "c:\oracle" -Filter "opatch.bat" -recurse | % {
             "<b>" + $_.fullname + "</b>"
             "<pre>"
             & $_.fullname lsinventory -detail
             "</pre>"
           }
-        } -ComputerName $ComputerName
+        }
         $htmlbody += $OracleInfo | Out-String
 
       }
